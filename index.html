@@ -489,6 +489,7 @@ function openDetail(id, push = true){
   const lows = sottoMargine(v);
   const tipoTag = v.tipologia ? `<span class="tag" style="background:color-mix(in srgb, var(${TIPO_VAR[v.tipologia]}) 22%, transparent);color:var(--fg)">${esc(v.tipologia)}</span>` : '';
   const cc = caliceDaCarta(v.costo, v.id);
+  const simTxt = k => { const c = daCarta(v.costo, k, v.id); return c ? `<span style="flex-basis:100%">Come i vini di costo simile: <b>${eur(c.prezzo)}</b> (${c.simili.map(s => esc(s.nome) + ' ' + eur(s[k])).join(', ')})</span>` : ''; };
   const sCal = cc ? cc.prezzo : o.sCalice;
   const rCal = v.prezzoCalice!=null && sCal!=null ? (v.prezzoCalice < sCal - 0.001 ? 'low' : v.prezzoCalice > sCal + 0.001 ? 'high' : 'ok') : null;
   const calTxt = cc ? `Consigliato: <b>${eur(cc.prezzo)}</b>, come i vini di costo simile (${cc.simili.map(s => esc(s.nome) + ' ' + eur(s.prezzoCalice)).join(', ')})`
@@ -512,8 +513,8 @@ function openDetail(id, push = true){
       <div><div class="lbl">Costo al calice</div><div class="val">${eur(o.cCal)}</div><div class="hint">${PAR.calici} calici</div></div>
     </div>
     ${calice}
-    ${pcard('Asporto', v.prezzoAsporto, o.asporto, '', o.sAspMin!=null ? `Fascia consigliata: <b>${eur(o.sAspMin)} – ${eur(o.sAspMax)}</b>` : '', o.rAsp)}
-    ${pcard('Al tavolo', v.prezzoTavolo, o.tavolo, '', o.sTavMin!=null ? `Fascia consigliata: <b>${eur(o.sTavMin)} – ${eur(o.sTavMax)}</b>` : '', o.rTav)}
+    ${pcard('Asporto', v.prezzoAsporto, o.asporto, '', (o.sAspMin!=null ? `Fascia consigliata: <b>${eur(o.sAspMin)} – ${eur(o.sAspMax)}</b>` : '') + simTxt('prezzoAsporto'), o.rAsp)}
+    ${pcard('Al tavolo', v.prezzoTavolo, o.tavolo, '', (o.sTavMin!=null ? `Fascia consigliata: <b>${eur(o.sTavMin)} – ${eur(o.sTavMax)}</b>` : '') + simTxt('prezzoTavolo'), o.rTav)}
     ${v.note ? `<div class="lbl" style="margin:14px 0 6px">Note</div><div class="notebox">${esc(v.note)}</div>` : ''}
     <p class="hint">Guadagno = prezzo senza IVA meno il costo. Incidenza costo = quanto pesa il costo sul prezzo senza IVA.</p>
     <div class="actions">${canWrite ? `<button class="btn danger" type="button" id="d-del">Elimina</button><button class="btn" type="button" id="d-dup">Duplica</button><button class="btn primary grow" type="button" id="d-edit">Modifica</button>` : ''}<button class="btn${canWrite ? '' : ' grow'}" type="button" id="d-close">Chiudi</button></div>`;
@@ -548,46 +549,59 @@ function openForm(v, push = true){
   ['costo','prezzoCalice','prezzoAsporto','prezzoTavolo'].forEach(k => F.elements[k].value = fmtIn(d[k]));
   F.elements.calice.checked = !!d.calice;
   $('f-err').hidden = true;
-  autoCal = null;
+  autoVals = {};
   F.querySelector('.altro').open = !!(d.note || d.verifica);
   updateSugg();
   openSheet('formSheet', F.elements.nome, () => openForm(v, false), push);
 }
 /* Calice consigliato: guardo quanto vendo al calice i vini della carta con un costo simile
    (entro ±12% o ±1 €, almeno i 3 più vicini) e applico lo stesso rapporto prezzo/costo. */
-function caliceDaCarta(costo, escludiId){
+/* Prezzo consigliato per calice, asporto o tavolo: guardo come vendi i vini della carta con un costo
+   simile (entro ±12% o ±1 €, almeno i 3 più vicini) e applico la mediana del loro rapporto prezzo/costo. */
+function daCarta(costo, campo, escludiId){
   if(!(costo > 0)) return null;
-  const peers = V.filter(v => v.calice && v.prezzoCalice > 0 && v.costo > 0 && v.id !== escludiId)
+  const peers = V.filter(v => v[campo] > 0 && v.costo > 0 && v.id !== escludiId && (campo!=='prezzoCalice' || v.calice))
     .map(v => ({ v, d: Math.abs(v.costo - costo) })).sort((a,b) => a.d - b.d);
   if(!peers.length) return null;
   const tol = Math.max(1, costo * 0.12);
   let sel = peers.filter(x => x.d <= tol);
   if(sel.length < 3) sel = peers.slice(0, 3);
-  const r = sel.map(x => x.v.prezzoCalice / x.v.costo).sort((a,b) => a - b);
+  const r = sel.map(x => x.v[campo] / x.v.costo).sort((a,b) => a - b);
   const med = r.length % 2 ? r[(r.length-1)/2] : (r[r.length/2-1] + r[r.length/2]) / 2;
   return { prezzo: Math.max(0.5, r05(med * costo)), simili: sel.slice(0, 4).map(x => x.v) };
 }
-let autoCal = null; // prezzo calice messo in automatico (si aggiorna finché non lo cambi tu)
+const caliceDaCarta = (costo, escludiId) => daCarta(costo, 'prezzoCalice', escludiId);
+const CAMPI = [['prezzoCalice','Calice','sCalice'], ['prezzoAsporto','Asporto','sAspMin'], ['prezzoTavolo','Tavolo','sTavMin']];
+let autoVals = {}; // prezzi messi in automatico (si aggiornano finché non li cambi tu)
 function updateSugg(){
   const costo = num(F.elements.costo.value);
-  const o = calc({ costo: isFinite(costo) ? costo : null });
+  const ok = isFinite(costo) && costo > 0;
+  const o = calc({ costo: ok ? costo : null });
   const cal = F.elements.calice.checked;
   $('fl-calice').style.opacity = cal ? '' : '.45';
   F.elements.prezzoCalice.disabled = !cal;
   const set = (k, txt, val) => { const b = F.querySelector(`.sugg[data-k="${k}"]`); b.textContent = txt; b.dataset.v = val ?? ''; b.disabled = val==null; };
-  const cc = cal && isFinite(costo) ? caliceDaCarta(costo, editing) : null;
-  const sCal = cc ? cc.prezzo : (cal ? o.sCalice : null);
+  const righe = [];
+  let simili = null;
+  for(const [k, label, minKey] of CAMPI){
+    const attivo = k!=='prezzoCalice' || cal;
+    const c = attivo && ok ? daCarta(costo, k, editing) : null;
+    const min = o[minKey];
+    const s = c ? c.prezzo : (attivo ? min : null);
+    if(c){
+      righe.push(`${label} <b>${eur(c.prezzo)}</b>${min!=null && c.prezzo < min - 0.001 ? ` <span class="low-price">(sotto il tuo minimo di ${eur(min)})</span>` : ''}`);
+      if(k==='prezzoTavolo' || !simili) simili = c.simili;
+    }
+    // compilo io il prezzo se è vuoto o se l'avevo messo io
+    const cur = F.elements[k].value.trim();
+    if(attivo && s!=null && (cur==='' || (autoVals[k]!=null && num(cur)===autoVals[k]))){ F.elements[k].value = fmtIn(s); autoVals[k] = s; }
+    set(k, s!=null ? `Consigliato ${eur(s)}` : 'Consigliato —', s);
+  }
   const box = $('consiglio');
-  if(cc){
+  if(righe.length){
     box.hidden = false;
-    box.innerHTML = `Calice consigliato: <b>${eur(cc.prezzo)}</b><br>come vendi i vini di costo simile: ${cc.simili.map(s => `${esc(s.nome)} (costo ${eur(s.costo)}, calice ${eur(s.prezzoCalice)})`).join(', ')}.`;
+    box.innerHTML = `Prezzi consigliati: ${righe.join(' · ')}<br><span class="hint" style="color:inherit">Come vendi i vini di costo simile: ${simili.map(v => `${esc(v.nome)} (costo ${eur(v.costo)}${v.calice ? `, calice ${eur(v.prezzoCalice)}` : ''}, asporto ${eur(v.prezzoAsporto)}, tavolo ${eur(v.prezzoTavolo)})`).join('; ')}.</span>`;
   } else box.hidden = true;
-  // compilo io il prezzo calice se è vuoto o se l'avevo messo io
-  const cur = F.elements.prezzoCalice.value.trim();
-  if(cal && sCal!=null && (cur==='' || (autoCal!=null && num(cur)===autoCal))){ F.elements.prezzoCalice.value = fmtIn(sCal); autoCal = sCal; }
-  set('prezzoCalice', sCal!=null ? `Consigliato ${eur(sCal)}` : 'Consigliato —', sCal);
-  set('prezzoAsporto', o.sAspMin!=null ? `Fascia ${eur(o.sAspMin)}–${eur(o.sAspMax)}` : 'Fascia —', o.sAspMin!=null ? r05((o.sAspMin+o.sAspMax)/2) : null);
-  set('prezzoTavolo', o.sTavMin!=null ? `Fascia ${eur(o.sTavMin)}–${eur(o.sTavMax)}` : 'Fascia —', o.sTavMin!=null ? r05((o.sTavMin+o.sTavMax)/2) : null);
 }
 F.elements.costo.addEventListener('input', updateSugg);
 F.elements.calice.addEventListener('change', updateSugg);

@@ -124,6 +124,7 @@ mark{background:var(--accent-soft);color:inherit;border-radius:3px;padding:0 1px
 .pc-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:6px 10px;margin-top:10px;font-variant-numeric:tabular-nums}
 .pc-grid .v{font-weight:700;font-size:.92rem}
 .pc-grid .v.good{color:var(--good)}
+.r-prices .good{color:var(--good);font-weight:600}
 .pc-range{margin-top:10px;font-size:.8rem;color:var(--muted);display:flex;flex-wrap:wrap;gap:6px;align-items:center}
 .pill{font-size:.72rem;font-weight:700;padding:2px 8px;border-radius:999px}
 .pill.ok{background:var(--good-soft);color:var(--good)}
@@ -216,6 +217,7 @@ label.fl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;font-weight:
         <option value="tipo">Tipologia</option>
         <option value="azienda">Cantina</option>
         <option value="nome">Nome</option>
+        <option value="calice">Più convenienti al calice</option>
         <option value="tavolo">Prezzo al tavolo</option>
         <option value="costo">Costo</option>
       </select></label>
@@ -410,6 +412,8 @@ function sorter(a,b){
   // Nessuno: ordine originale della lista (come nell'Excel), i vini nuovi in fondo
   if(sortBy==='nessuno') return (a.creato||'').localeCompare(b.creato||'') || a.id.localeCompare(b.id);
   if(sortBy==='nome') return cmpTxt(a.nome, b.nome);
+  // Più convenienti al calice: prima i vini che fanno guadagnare di più per ogni calice (IVA esclusa)
+  if(sortBy==='calice'){ const g = v => v.calice ? calc(v).calice?.marg ?? -1e9 : -2e9; return g(b) - g(a) || cmpTxt(a.nome, b.nome); }
   if(sortBy==='tavolo') return (a.prezzoTavolo ?? 1e9) - (b.prezzoTavolo ?? 1e9) || cmpTxt(a.nome, b.nome);
   if(sortBy==='costo') return (a.costo ?? 1e9) - (b.costo ?? 1e9) || cmpTxt(a.nome, b.nome);
   return cmpTxt(a.azienda||'', b.azienda||'') || cmpTxt(a.nome, b.nome);
@@ -455,7 +459,8 @@ function rowHtml(v, terms){
   const low = new Set(); // il sotto margine si vede solo nella scheda del vino
   const sub = [v.azienda, v.vitigno].filter(Boolean);
   const p = (k, txt) => low.has(k) ? `<span class="low-price">${txt}</span>` : txt;
-  const small = [v.calice ? p('calice', `calice ${eur(v.prezzoCalice)}`) : null, p('asporto', `asporto ${eur(v.prezzoAsporto)}`)].filter(Boolean).map(s => `<div>${s}</div>`).join('');
+  const gc = sortBy==='calice' && v.calice ? calc(v).calice : null;
+  const small = [v.calice ? p('calice', `calice ${eur(v.prezzoCalice)}`) : null, gc ? `<span class="good">guadagni ${eur(gc.marg)}/calice</span>` : null, p('asporto', `asporto ${eur(v.prezzoAsporto)}`)].filter(Boolean).map(s => `<div>${s}</div>`).join('');
   return `<button class="row" type="button" data-id="${esc(v.id)}">${bottleSvg(v.tipologia, v.calice)}
     <div class="r-main"><div class="r-name"><b>${hl(v.nome, terms)}</b>${v.calice ? '<span class="tag">Calice</span>' : ''}${fix ? '<span class="tag warn" title="Segnalazione">!</span>' : ''}</div>
     <div class="r-sub">${sub.map(s => hl(s, terms)).join(' · ') || '&nbsp;'}</div></div>

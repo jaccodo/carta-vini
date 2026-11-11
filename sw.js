@@ -1,6 +1,6 @@
 // Cache dei file dell'app: dopo la prima apertura si apre anche senza internet.
 // Quando modifichi i file cambia la versione qui sotto, così il telefono scarica l'aggiornamento.
-const CACHE = 'vini-v7';
+const CACHE = 'vini-v8';
 const FILES = ['./', 'index.html', 'firebase-config.js', 'manifest.json', 'icons/icon-192.png', 'icons/icon-512.png'];
 const RUNTIME = 'vini-lib-v1';
 

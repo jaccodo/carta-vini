@@ -203,6 +203,7 @@ label.fl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;font-weight:
     <div class="sortrow">
       <span id="filterInfo"></span>
       <label>Ordina per <select id="sort">
+        <option value="nessuno">Nessuno</option>
         <option value="tipo">Tipologia</option>
         <option value="azienda">Azienda</option>
         <option value="nome">Nome</option>
@@ -392,6 +393,8 @@ function passFilter(v){
 }
 const cmpTxt = (a,b) => a.localeCompare(b, 'it', { sensitivity:'base' });
 function sorter(a,b){
+  // Nessuno: ordine originale della lista (come nell'Excel), i vini nuovi in fondo
+  if(sortBy==='nessuno') return (a.creato||'').localeCompare(b.creato||'') || a.id.localeCompare(b.id);
   if(sortBy==='nome') return cmpTxt(a.nome, b.nome);
   if(sortBy==='tavolo') return (a.prezzoTavolo ?? 1e9) - (b.prezzoTavolo ?? 1e9) || cmpTxt(a.nome, b.nome);
   if(sortBy==='costo') return (a.costo ?? 1e9) - (b.costo ?? 1e9) || cmpTxt(a.nome, b.nome);

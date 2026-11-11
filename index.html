@@ -142,6 +142,10 @@ label.fl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;font-weight:
 .fl input:focus-visible,.fl select:focus-visible,.fl textarea:focus-visible{outline:2px solid var(--accent);outline-offset:0;border-color:transparent}
 .sugg{border:0;background:transparent;color:var(--accent-fg);font-size:.75rem;font-weight:700;padding:2px 0;cursor:pointer;text-align:left}
 .sugg:disabled{color:var(--muted);cursor:default;font-weight:500}
+.consiglio{background:var(--accent-soft);color:var(--accent-fg);border-radius:12px;padding:10px 12px;font-size:.85rem;line-height:1.45}
+.consiglio b{font-size:1rem}
+.altro summary{cursor:pointer;font-size:.85rem;font-weight:600;color:var(--muted);padding:4px 0}
+.altro[open]{display:flex;flex-direction:column;gap:12px}
 .check{display:flex;align-items:center;gap:10px;font-weight:600;font-size:.92rem;cursor:pointer}
 .check input{width:20px;height:20px;accent-color:var(--accent)}
 .hint{font-size:.78rem;color:var(--muted);margin:0}
@@ -196,7 +200,7 @@ label.fl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;font-weight:
     </div>
     <div class="search">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
-      <input id="q" type="search" placeholder="Cerca vino, azienda, vitigno…" autocomplete="off" enterkeyhint="search" aria-label="Cerca">
+      <input id="q" type="search" placeholder="Cerca vino, cantina, vitigno…" autocomplete="off" enterkeyhint="search" aria-label="Cerca">
       <button id="clear" type="button" aria-label="Cancella ricerca" hidden>×</button>
     </div>
     <div class="chips" id="chips" role="toolbar" aria-label="Filtri"></div>
@@ -205,7 +209,7 @@ label.fl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;font-weight:
       <label>Ordina per <select id="sort">
         <option value="nessuno">Nessuno</option>
         <option value="tipo">Tipologia</option>
-        <option value="azienda">Azienda</option>
+        <option value="azienda">Cantina</option>
         <option value="nome">Nome</option>
         <option value="tavolo">Prezzo al tavolo</option>
         <option value="costo">Costo</option>
@@ -235,22 +239,25 @@ label.fl{display:flex;flex-direction:column;gap:4px;font-size:.8rem;font-weight:
   <form id="form" novalidate>
     <label class="fl">Nome del vino *<input name="nome" required autocomplete="off"></label>
     <div class="f2">
-      <label class="fl">Azienda<input name="azienda" list="dl-az" autocomplete="off"></label>
+      <label class="fl">Cantina<input name="azienda" list="dl-az" autocomplete="off"></label>
       <label class="fl">Vitigno<input name="vitigno" list="dl-vit" autocomplete="off"></label>
     </div>
     <div class="f2">
       <label class="fl">Tipologia<select name="tipologia"><option value="">—</option><option>Rosso</option><option>Bianco</option><option>Bollicine</option><option>Rosato</option><option>Dolce</option><option>Altro</option></select></label>
-      <label class="fl">Costo fornitore (€, IVA esclusa)<input name="costo" inputmode="decimal" autocomplete="off" placeholder="es. 8,20"></label>
+      <label class="fl">Costo bottiglia (€, IVA esclusa)<input name="costo" inputmode="decimal" autocomplete="off" placeholder="es. 8,20"></label>
     </div>
-    <label class="check"><input type="checkbox" name="calice"> Si vende anche al calice</label>
+    <label class="check"><input type="checkbox" name="calice"> Lo vendiamo al calice</label>
+    <div class="consiglio" id="consiglio" hidden></div>
     <div class="f3">
       <label class="fl" id="fl-calice">Prezzo calice (€)<input name="prezzoCalice" inputmode="decimal" autocomplete="off"><button type="button" class="sugg" data-k="prezzoCalice"></button></label>
       <label class="fl">Prezzo asporto (€)<input name="prezzoAsporto" inputmode="decimal" autocomplete="off"><button type="button" class="sugg" data-k="prezzoAsporto"></button></label>
       <label class="fl">Prezzo al tavolo (€)<input name="prezzoTavolo" inputmode="decimal" autocomplete="off"><button type="button" class="sugg" data-k="prezzoTavolo"></button></label>
     </div>
-    <p class="hint">I prezzi di vendita sono IVA inclusa. Tocca il prezzo suggerito per usarlo.</p>
-    <label class="fl">Note<textarea name="note" placeholder="Abbinamenti, annata, fornitore…"></textarea></label>
-    <label class="fl">Da sistemare<input name="verifica" autocomplete="off" placeholder="Lascia vuoto se è tutto a posto"></label>
+    <p class="hint">Prezzi di vendita IVA inclusa. Costo al calice, guadagni e fasce li calcolo io.</p>
+    <details class="altro"><summary>Note e altro (facoltativo)</summary>
+      <label class="fl">Note<textarea name="note" placeholder="Abbinamenti, annata, fornitore…"></textarea></label>
+      <label class="fl">Da sistemare<input name="verifica" autocomplete="off" placeholder="Lascia vuoto se è tutto a posto"></label>
+    </details>
     <p class="err" id="f-err" hidden></p>
     <div class="actions"><button class="btn" type="button" id="f-cancel">Annulla</button><button class="btn primary grow" type="submit">Salva</button></div>
   </form>
@@ -459,11 +466,16 @@ function openDetail(id, push = true){
   const o = calc(v);
   const probs = problems(v);
   const tipoTag = v.tipologia ? `<span class="tag" style="background:color-mix(in srgb, var(${TIPO_VAR[v.tipologia]}) 22%, transparent);color:var(--fg)">${esc(v.tipologia)}</span>` : '';
+  const cc = caliceDaCarta(v.costo, v.id);
+  const sCal = cc ? cc.prezzo : o.sCalice;
+  const rCal = v.prezzoCalice!=null && sCal!=null ? (v.prezzoCalice < sCal - 0.001 ? 'low' : v.prezzoCalice > sCal + 0.001 ? 'high' : 'ok') : null;
+  const calTxt = cc ? `Consigliato: <b>${eur(cc.prezzo)}</b>, come i vini di costo simile (${cc.simili.map(s => esc(s.nome) + ' ' + eur(s.prezzoCalice)).join(', ')})`
+    : o.sCalice!=null ? `Consigliato: <b>${eur(o.sCalice)}</b> (${times(PAR.multCalice)} sul costo al calice)` : '';
   const calice = v.calice
     ? pcard('Al calice', v.prezzoCalice, o.calice,
         o.calice ? `<div style="grid-column:1/-1"><div class="lbl">Guadagno su una bottiglia venduta a calici (${PAR.calici})</div><div class="v good">${eur(o.calice.bott)}</div></div>` : '',
-        o.sCalice!=null ? `Prezzo suggerito: <b>${eur(o.sCalice)}</b> (${times(PAR.multCalice)} sul costo al calice)` : '', o.rCal)
-    : `<div class="pcard off"><div class="pc-top"><h4>Al calice</h4><div class="hint">Non si vende al calice${o.sCalice!=null ? ` · sarebbe ${eur(o.sCalice)}` : ''}</div></div></div>`;
+        calTxt, rCal ? { ok:'ok', low:'low', high:'high' }[rCal] : null)
+    : `<div class="pcard off"><div class="pc-top"><h4>Al calice</h4><div class="hint">Non si vende al calice${sCal!=null ? ` · sarebbe ${eur(sCal)}` : ''}</div></div></div>`;
   $('detail').innerHTML = `
     <div class="d-head">${bottleSvg(v.tipologia, v.calice)}<div style="min-width:0">
       <h2 id="d-title">${esc(v.nome)}</h2>
@@ -513,9 +525,26 @@ function openForm(v, push = true){
   ['costo','prezzoCalice','prezzoAsporto','prezzoTavolo'].forEach(k => F.elements[k].value = fmtIn(d[k]));
   F.elements.calice.checked = !!d.calice;
   $('f-err').hidden = true;
+  autoCal = null;
+  F.querySelector('.altro').open = !!(d.note || d.verifica);
   updateSugg();
   openSheet('formSheet', F.elements.nome, () => openForm(v, false), push);
 }
+/* Calice consigliato: guardo quanto vendo al calice i vini della carta con un costo simile
+   (entro ±12% o ±1 €, almeno i 3 più vicini) e applico lo stesso rapporto prezzo/costo. */
+function caliceDaCarta(costo, escludiId){
+  if(!(costo > 0)) return null;
+  const peers = V.filter(v => v.calice && v.prezzoCalice > 0 && v.costo > 0 && v.id !== escludiId)
+    .map(v => ({ v, d: Math.abs(v.costo - costo) })).sort((a,b) => a.d - b.d);
+  if(!peers.length) return null;
+  const tol = Math.max(1, costo * 0.12);
+  let sel = peers.filter(x => x.d <= tol);
+  if(sel.length < 3) sel = peers.slice(0, 3);
+  const r = sel.map(x => x.v.prezzoCalice / x.v.costo).sort((a,b) => a - b);
+  const med = r.length % 2 ? r[(r.length-1)/2] : (r[r.length/2-1] + r[r.length/2]) / 2;
+  return { prezzo: Math.max(0.5, r05(med * costo)), simili: sel.slice(0, 4).map(x => x.v) };
+}
+let autoCal = null; // prezzo calice messo in automatico (si aggiorna finché non lo cambi tu)
 function updateSugg(){
   const costo = num(F.elements.costo.value);
   const o = calc({ costo: isFinite(costo) ? costo : null });
@@ -523,7 +552,17 @@ function updateSugg(){
   $('fl-calice').style.opacity = cal ? '' : '.45';
   F.elements.prezzoCalice.disabled = !cal;
   const set = (k, txt, val) => { const b = F.querySelector(`.sugg[data-k="${k}"]`); b.textContent = txt; b.dataset.v = val ?? ''; b.disabled = val==null; };
-  set('prezzoCalice', o.sCalice!=null && cal ? `Suggerito ${eur(o.sCalice)}` : 'Suggerito —', cal ? o.sCalice : null);
+  const cc = cal && isFinite(costo) ? caliceDaCarta(costo, editing) : null;
+  const sCal = cc ? cc.prezzo : (cal ? o.sCalice : null);
+  const box = $('consiglio');
+  if(cc){
+    box.hidden = false;
+    box.innerHTML = `Calice consigliato: <b>${eur(cc.prezzo)}</b><br>come vendi i vini di costo simile: ${cc.simili.map(s => `${esc(s.nome)} (costo ${eur(s.costo)}, calice ${eur(s.prezzoCalice)})`).join(', ')}.`;
+  } else box.hidden = true;
+  // compilo io il prezzo calice se è vuoto o se l'avevo messo io
+  const cur = F.elements.prezzoCalice.value.trim();
+  if(cal && sCal!=null && (cur==='' || (autoCal!=null && num(cur)===autoCal))){ F.elements.prezzoCalice.value = fmtIn(sCal); autoCal = sCal; }
+  set('prezzoCalice', sCal!=null ? `Consigliato ${eur(sCal)}` : 'Consigliato —', sCal);
   set('prezzoAsporto', o.sAspMin!=null ? `Fascia ${eur(o.sAspMin)}–${eur(o.sAspMax)}` : 'Fascia —', o.sAspMin!=null ? r05((o.sAspMin+o.sAspMax)/2) : null);
   set('prezzoTavolo', o.sTavMin!=null ? `Fascia ${eur(o.sTavMin)}–${eur(o.sTavMax)}` : 'Fascia —', o.sTavMin!=null ? r05((o.sTavMin+o.sTavMax)/2) : null);
 }
@@ -645,7 +684,7 @@ $('offline').hidden = navigator.onLine;
 
 /* ---------- esporta / importa ---------- */
 function csvExport(){
-  const cols = [['tipologia','Tipologia'],['azienda','Azienda'],['nome','Nome'],['vitigno','Vitigno'],['calice','Al calice'],['costo','Costo fornitore (IVA escl.)'],['_cc','Costo al calice'],['prezzoCalice','Prezzo calice (IVA incl.)'],['prezzoAsporto','Prezzo asporto (IVA incl.)'],['prezzoTavolo','Prezzo tavolo (IVA incl.)'],['_mc','Guadagno calice (senza IVA)'],['_ma','Guadagno asporto (senza IVA)'],['_mt','Guadagno tavolo (senza IVA)'],['_sc','Calice suggerito'],['_sa','Asporto suggerito min–max'],['_st','Tavolo suggerito min–max'],['note','Note'],['verifica','Da sistemare']];
+  const cols = [['tipologia','Tipologia'],['azienda','Cantina'],['nome','Nome'],['vitigno','Vitigno'],['calice','Al calice'],['costo','Costo fornitore (IVA escl.)'],['_cc','Costo al calice'],['prezzoCalice','Prezzo calice (IVA incl.)'],['prezzoAsporto','Prezzo asporto (IVA incl.)'],['prezzoTavolo','Prezzo tavolo (IVA incl.)'],['_mc','Guadagno calice (senza IVA)'],['_ma','Guadagno asporto (senza IVA)'],['_mt','Guadagno tavolo (senza IVA)'],['_sc','Calice suggerito'],['_sa','Asporto suggerito min–max'],['_st','Tavolo suggerito min–max'],['note','Note'],['verifica','Da sistemare']];
   const n2 = x => x==null || !isFinite(x) ? '' : String(Math.round(x*100)/100).replace('.', ',');
   const rows = [...V].sort((a,b) => cmpTxt(a.tipologia||'zz', b.tipologia||'zz') || sorter(a,b)).map(v => {
     const o = calc(v);

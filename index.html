@@ -425,9 +425,8 @@ function sottoMargine(v){
 function renderChips(){
   const tipiPresenti = TIPI.filter(t => V.some(v => v.tipologia===t));
   const nFix = V.filter(v => problems(v).length).length;
-  const nLow = V.filter(v => sottoMargine(v).length).length;
   const list = [['all','Tutti',V.length,null], ...tipiPresenti.map(t => [t, PLURALE[t], V.filter(v=>v.tipologia===t).length, TIPO_VAR[t]]), ['calice','Al calice',V.filter(v=>v.calice).length,null]];
-  if(nLow) list.push(['low','Sotto margine',nLow,'--bad']);
+
   if(nFix) list.push(['fix','Segnalazioni',nFix,null]);
   if(!list.some(c => c[0]===filter)) filter = 'all';
   $('chips').innerHTML = list.map(([k,l,n,c]) => `<button class="chip" type="button" data-f="${esc(k)}" aria-pressed="${k===filter}">${c ? `<i style="background:var(${c})"></i>` : ''}${esc(l)}<span>${n}</span></button>`).join('');
@@ -453,14 +452,13 @@ function render(){
 }
 function rowHtml(v, terms){
   const fix = problems(v).length > 0;
-  const low = new Set(sottoMargine(v).map(x => x.k));
+  const low = new Set(); // il sotto margine si vede solo nella scheda del vino
   const sub = [v.azienda, v.vitigno].filter(Boolean);
   const p = (k, txt) => low.has(k) ? `<span class="low-price">${txt}</span>` : txt;
   const small = [v.calice ? p('calice', `calice ${eur(v.prezzoCalice)}`) : null, p('asporto', `asporto ${eur(v.prezzoAsporto)}`)].filter(Boolean).map(s => `<div>${s}</div>`).join('');
   return `<button class="row" type="button" data-id="${esc(v.id)}">${bottleSvg(v.tipologia, v.calice)}
     <div class="r-main"><div class="r-name"><b>${hl(v.nome, terms)}</b>${v.calice ? '<span class="tag">Calice</span>' : ''}${fix ? '<span class="tag warn" title="Segnalazione">!</span>' : ''}</div>
-    <div class="r-sub">${sub.map(s => hl(s, terms)).join(' · ') || '&nbsp;'}</div>
-    ${low.size ? `<div class="r-low">▼ Sotto margine: ${[...low].join(', ')}</div>` : ''}</div>
+    <div class="r-sub">${sub.map(s => hl(s, terms)).join(' · ') || '&nbsp;'}</div></div>
     <div class="r-prices"><div class="big"><small>tavolo</small>${p('tavolo', eur(v.prezzoTavolo))}</div><div class="small">${small}</div></div></button>`;
 }
 

@@ -453,7 +453,7 @@ function pcard(title, price, a, extra, rangeTxt, state, off){
     ${rangeTxt ? `<div class="pc-range">${rangeTxt} ${rangePill(state)}</div>` : ''}
   </div>`;
 }
-function openDetail(id){
+function openDetail(id, push = true){
   const v = V.find(x => x.id===id); if(!v) return;
   current = id;
   const o = calc(v);
@@ -493,7 +493,7 @@ function openDetail(id){
       try{ await backend.del(v.id); toast(`"${v.nome}" eliminato`); }catch(err){ toast('Eliminazione non riuscita: ' + (err.message || 'riprova')); }
     };
   }
-  openSheet('detailSheet', $('d-close'));
+  openSheet('detailSheet', $('d-close'), () => openDetail(id, false), push);
 }
 
 /* ---------- modulo ---------- */
@@ -504,7 +504,7 @@ function fillDatalists(){
   $('dl-vit').innerHTML = uniq('vitigno').map(x => `<option value="${esc(x)}">`).join('');
 }
 const fmtIn = v => v==null ? '' : String(v).replace('.', ',');
-function openForm(v){
+function openForm(v, push = true){
   editing = v && v.id ? v.id : null;
   $('f-title').textContent = editing ? 'Modifica vino' : 'Nuovo vino';
   fillDatalists();
@@ -514,7 +514,7 @@ function openForm(v){
   F.elements.calice.checked = !!d.calice;
   $('f-err').hidden = true;
   updateSugg();
-  openSheet('formSheet', F.elements.nome);
+  openSheet('formSheet', F.elements.nome, () => openForm(v, false), push);
 }
 function updateSugg(){
   const costo = num(F.elements.costo.value);
@@ -530,7 +530,7 @@ function updateSugg(){
 F.elements.costo.addEventListener('input', updateSugg);
 F.elements.calice.addEventListener('change', updateSugg);
 F.querySelectorAll('.sugg').forEach(b => b.onclick = () => { if(b.dataset.v) F.elements[b.dataset.k].value = fmtIn(+b.dataset.v); });
-$('f-cancel').onclick = () => { closeSheets(); if(editing) openDetail(editing); };
+$('f-cancel').onclick = backOne;
 F.onsubmit = async e => {
   e.preventDefault();
   const err = $('f-err');
@@ -553,19 +553,20 @@ F.onsubmit = async e => {
     agg: new Date().toISOString(),
   };
   if(old && old.creato) v.creato = old.creato; else if(!old) v.creato = v.agg;
-  closeSheets();
-  try{ await backend.set(v); toast(editing ? 'Modifiche salvate' : `"${nome}" aggiunto`); }
+  const wasEditing = editing;
+  try{ await backend.set(v); toast(wasEditing ? 'Modifiche salvate' : `"${nome}" aggiunto`); }
   catch(er){ toast('Salvataggio non riuscito: ' + (er.message || 'riprova')); }
-  openDetail(v.id);
+  // il modulo lascia il posto alla scheda del vino salvato: "indietro" torna dove eri prima
+  if(wasEditing && depth>1) backOne(); else openDetail(v.id, false);
 };
 
 /* ---------- parametri ---------- */
 const PF = $('pform');
 const PKEYS = Object.keys(DEF_PARAMS);
-function openParams(){
+function openParams(push = true){
   PKEYS.forEach(k => PF.elements[k].value = fmtIn(PAR[k]));
   $('p-err').hidden = true;
-  openSheet('paramSheet', PF.elements.iva);
+  openSheet('paramSheet', PF.elements.iva, () => openParams(false), push);
 }
 $('p-cancel').onclick = closeSheets;
 PF.onsubmit = async e => {
@@ -582,19 +583,38 @@ PF.onsubmit = async e => {
 };
 
 /* ---------- fogli, toast, eventi ---------- */
-function openSheet(id, focusEl){
+/* Tasto indietro del telefono: ogni schermata aperta è un passo nella cronologia,
+   così "indietro" torna alla schermata precedente invece di uscire dall'app. */
+let depth = 0;            // schermate aperte nella cronologia
+const views = [];         // views[n] = come riaprire la schermata n
+let restoring = false;    // true mentre riapro una schermata dopo "indietro"
+if(history.state && history.state.vini) history.replaceState(null, '');
+function openSheet(id, focusEl, reopen, push = true){
   if(!lastFocus) lastFocus = document.activeElement;
+  if(!restoring){
+    if(push || depth===0){ depth++; history.pushState({ vini: depth }, ''); }
+    views[depth] = reopen;
+  }
   document.querySelectorAll('.sheet').forEach(s => s.hidden = s.id!==id);
   $(id).hidden = false; $(id).querySelector('.panel').scrollTop = 0;
   if(focusEl) setTimeout(() => focusEl.focus({ preventScroll:true }), 30);
 }
-function closeSheets(){
+function hideSheets(){
   document.querySelectorAll('.sheet').forEach(s => s.hidden = true);
   current = null;
   if(lastFocus){ try{ lastFocus.focus({ preventScroll:true }); }catch(e){} } lastFocus = null;
 }
-document.querySelectorAll('.sheet').forEach(s => s.addEventListener('click', e => { if(e.target===s) closeSheets(); }));
-document.addEventListener('keydown', e => { if(e.key==='Escape' && document.querySelector('.sheet:not([hidden])')) closeSheets(); });
+function closeSheets(){ if(depth>0) history.go(-depth); else hideSheets(); }
+function backOne(){ if(depth>0) history.back(); else hideSheets(); }
+window.addEventListener('popstate', e => {
+  const d = (e.state && e.state.vini) || 0;
+  depth = d;
+  if(d===0 || !views[d]){ depth = 0; hideSheets(); return; }
+  restoring = true;
+  try{ views[d](); } finally { restoring = false; }
+});
+document.querySelectorAll('.sheet').forEach(s => s.addEventListener('click', e => { if(e.target===s) backOne(); }));
+document.addEventListener('keydown', e => { if(e.key==='Escape' && document.querySelector('.sheet:not([hidden])')) backOne(); });
 let toastT;
 function toast(msg){ const t = $('toast'); t.textContent = msg; t.hidden = false; clearTimeout(toastT); toastT = setTimeout(() => t.hidden = true, 2800); }
 
@@ -605,9 +625,10 @@ $('sort').value = sortBy;
 $('sort').onchange = e => { sortBy = e.target.value; lsSet('vini-sort', sortBy); render(); };
 $('out').addEventListener('click', e => { const r = e.target.closest('.row'); if(r) openDetail(r.dataset.id); });
 $('add').onclick = () => openForm(null);
-$('acct').onclick = () => openSheet('menuSheet', $('m-params'));
+const openMenu = (push = true) => openSheet('menuSheet', $('m-params'), () => openMenu(false), push);
+$('acct').onclick = () => openMenu();
 $('m-close').onclick = closeSheets;
-$('m-params').onclick = () => { closeSheets(); openParams(); };
+$('m-params').onclick = () => openParams(false);
 $('m-export').onclick = () => { closeSheets(); csvExport(); };
 $('m-logout').onclick = async () => { closeSheets(); try{ await backend.logout(); }catch(e){} };
 $('m-importFile').onchange = async e => { const f = e.target.files[0]; e.target.value = ''; if(!f) return; closeSheets(); await importText(await f.text()); };
@@ -672,9 +693,9 @@ function setData(list){
   V = list.filter(v => v && v.nome).map(v => ({ ...v, tipologia: v.tipologia || '' }));
   loaded = true;
   render();
-  if(current){ const still = V.find(v => v.id===current); if(!still) closeSheets(); else if(!$('detailSheet').hidden) { const sc = $('detailSheet').querySelector('.panel').scrollTop; openDetail(current); $('detailSheet').querySelector('.panel').scrollTop = sc; } }
+  if(current){ const still = V.find(v => v.id===current); if(!still) closeSheets(); else if(!$('detailSheet').hidden) { const sc = $('detailSheet').querySelector('.panel').scrollTop; openDetail(current, false); $('detailSheet').querySelector('.panel').scrollTop = sc; } }
 }
-function setParamsLocal(p){ PAR = { ...DEF_PARAMS, ...(p||{}) }; render(); if(current && !$('detailSheet').hidden) openDetail(current); }
+function setParamsLocal(p){ PAR = { ...DEF_PARAMS, ...(p||{}) }; render(); if(current && !$('detailSheet').hidden) openDetail(current, false); }
 function gate(state, info){
   $('gate').hidden = !state;
   ['loading','login','denied','error'].forEach(s => $('gate-'+s).hidden = s!==state);
